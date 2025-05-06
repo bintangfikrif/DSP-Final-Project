@@ -2,11 +2,11 @@
 # Dosen Pengampu: Martin Clinton Tosima Manullang, S.T.,M.T.
 
 ## Anggota Kelompok
-| Nama                        | NIM       | 
-|-----------------------------|-----------|
-| Bintang Fikri Fauzan        | 122140008 |  
-| Elsa Elisa Yohana Sianturi  | 122140135 |  
-| Eden Wijaya                 | 122140187 |  
+| Nama                        | NIM       | ID GitHub                                         |
+|-----------------------------|-----------|---------------------------------------------------|
+| Bintang Fikri Fauzan        | 122140008 |[@bintangfikrif](https://github.com/bintangfikrif) |
+| Elsa Elisa Yohana Sianturi  | 122140135 |[@elsaelisa09](https://github.com/elsaelisa09)     |
+| Eden Wijaya                 | 122140187 |[@EdenWijaya](https://github.com/EdenWijaya)       |
 
 ## Deskripsi Aplikasi
 
