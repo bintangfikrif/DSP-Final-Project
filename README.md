@@ -5,7 +5,7 @@
 | Nama                        | NIM       | 
 |-----------------------------|-----------|
 | Bintang Fikri Fauzan        | 122140008 |  
-| Elsa Elisa Yohana Sianturi  | 122140038 |  
+| Elsa Elisa Yohana Sianturi  | 122140135 |  
 | Eden Wijaya                 | 122140187 |  
 
 ## Deskripsi Aplikasi
