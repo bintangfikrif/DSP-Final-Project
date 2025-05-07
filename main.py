@@ -58,7 +58,7 @@ try:
             print("Gagal membaca frame.")
             break
         
-        frame = cv2.flip(frame, 1)  # Hilangkan mirror (flip horizontal)
+        frame = cv2.flip(frame, 1)
 
         frame = cv2.resize(frame, STANDARD_SIZE)
         frame_buffer.append(frame)
