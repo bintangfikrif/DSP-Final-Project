@@ -1,169 +1,136 @@
-<<<<<<< HEAD
-# Final Project
-=======
->>>>>>> dd7a3c98232a186995554fbf74bca290427417fa
+# import the libraries
+import sys
 import cv2
 import numpy as np
-import matplotlib.pyplot as plt
-from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
 import mediapipe as mp
+import matplotlib.pyplot as plt
+from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QLabel
+from PyQt5.QtGui import QImage, QPixmap
+from PyQt5.QtCore import Qt, QTimer
+from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 
-# Setup
-resp_signal = []
-fps = 35
-time_window = 60
-frame_buffer_limit = time_window * fps
-frame_buffer = []
-STANDARD_SIZE = (640, 480)
-
-<<<<<<< HEAD
-# MediaPipe Pose
-mp_pose = mp.solutions.pose
-pose = mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5)
-
-# Fungsi konversi Matplotlib ke OpenCV image
-=======
-# Pose MediaPipe
-mp_pose = mp.solutions.pose
-pose = mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5)
-
-# Fungsi untuk mengonversi plot Matplotlib ke gambar OpenCV
->>>>>>> dd7a3c98232a186995554fbf74bca290427417fa
-def plot_to_image(fig):
-    canvas = FigureCanvas(fig)
-    canvas.draw()
-    buf = canvas.buffer_rgba()
-    w, h = canvas.get_width_height()
-    image = np.frombuffer(buf, dtype=np.uint8).reshape((h, w, 4))  # RGBA
-    image_rgb = cv2.cvtColor(image, cv2.COLOR_RGBA2BGR)
-    plt.close(fig)
-    return image_rgb
-
-
-<<<<<<< HEAD
-# Ekstraksi sinyal rPPG (jika dibutuhkan)
-=======
-# Fungsi untuk ekstraksi sinyal rPPG
->>>>>>> dd7a3c98232a186995554fbf74bca290427417fa
-def extract_rppg_signal(frame):
-    yuv_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2YUV)
-    y_channel = yuv_frame[:, :, 0]
+def extract_rppg_signal(frame, bbox):
+    x, y, w, h = bbox
+    face_roi = frame[y:y+h, x:x+w]
+    if face_roi.size == 0:
+        return None
+    yuv = cv2.cvtColor(face_roi, cv2.COLOR_BGR2YUV)
+    y_channel = yuv[:, :, 0]
     return np.mean(y_channel)
 
-try:
-    cap = cv2.VideoCapture(0)
-    if not cap.isOpened():
-        raise Exception("Kamera tidak bisa dibuka.")
+class MainWindow(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("Real-Time rPPG & Respiration GUI")
+        self.resize(900, 900)
 
-<<<<<<< HEAD
-    # Setup plot
-    fig, ax_resp = plt.subplots(figsize=(8, 4))
-    ax_resp.set_title("Real-Time Respiration Signal")
-    ax_resp.set_xlabel("Frame")
-    ax_resp.set_ylabel("Signal Amplitude")
-=======
-    # Pengaturan plot
-    fig, ax_resp = plt.subplots(figsize=(8, 4))
-    ax_resp.set_title("Sinyal Pernapasan Real-Time")
-    ax_resp.set_xlabel("Frame")
-    ax_resp.set_ylabel("Amplitudo Sinyal")
->>>>>>> dd7a3c98232a186995554fbf74bca290427417fa
-    line_resp, = ax_resp.plot([], [], color='green')
+        # Initialize MediaPipe
+        self.mp_face_detection = mp.solutions.face_detection
+        self.face_detector = self.mp_face_detection.FaceDetection(min_detection_confidence=0.5)
+        self.mp_pose = mp.solutions.pose
+        self.pose = self.mp_pose.Pose(min_detection_confidence=0.5)
 
-    def update_plot():
-        line_resp.set_data(range(len(resp_signal)), resp_signal)
-        ax_resp.relim()
-        ax_resp.autoscale_view()
+        # Video display
+        self.video_label = QLabel()
+        self.video_label.setFixedSize(640, 480)
 
-    while True:
-        ret, frame = cap.read()
+        # rPPG value display
+        self.rppg_label = QLabel("rPPG: -")
+        self.rppg_label.setStyleSheet("font-size: 20px; color: orange;")
+
+        # Matplotlib plots
+        self.fig, (self.ax_rppg, self.ax_resp) = plt.subplots(2, 1, figsize=(6, 4))
+        self.canvas = FigureCanvas(self.fig)
+        self.rppg_signal = []
+        self.resp_signal = []
+        self.fps = 35
+        self.frame_buffer_limit = 30 * self.fps
+
+        # Layout
+        vbox = QVBoxLayout()
+        vbox.addWidget(self.video_label)
+        vbox.addWidget(self.rppg_label)
+        vbox.addWidget(self.canvas)
+        self.setLayout(vbox)
+
+        # Video capture
+        self.cap = cv2.VideoCapture(0)
+        self.timer = QTimer()
+        self.timer.timeout.connect(self.update_frame)
+        self.timer.start(30)
+
+    def update_frame(self):
+        ret, frame = self.cap.read()
         if not ret:
-            print("Gagal membaca frame.")
-            break
-<<<<<<< HEAD
-=======
-        
+            return
         frame = cv2.flip(frame, 1)
->>>>>>> dd7a3c98232a186995554fbf74bca290427417fa
-
-        frame = cv2.resize(frame, STANDARD_SIZE)
-        frame_buffer.append(frame)
-        if len(frame_buffer) > frame_buffer_limit:
-            frame_buffer.pop(0)
-
+        frame = cv2.resize(frame, (640, 480))
         rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        results = pose.process(rgb_frame)
 
-        if results.pose_landmarks:
-            h, w, _ = frame.shape
+        # Face Detection for rPPG
+        face_results = self.face_detector.process(rgb_frame)
+        rppg_value = None
+        if face_results.detections:
+            for detection in face_results.detections:
+                bbox = detection.location_data.relative_bounding_box
+                ih, iw, _ = frame.shape
+                x = int(bbox.xmin * iw)
+                y = int(bbox.ymin * ih)
+                w = int(bbox.width * iw)
+                h = int(bbox.height * ih)
+                x, y = max(0, x), max(0, y)
+                w, h = min(frame.shape[1] - x, w), min(frame.shape[0] - y, h)
+                cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
+                rppg_value = extract_rppg_signal(frame, (x, y, w, h))
+                if rppg_value is not None:
+                    self.rppg_signal.append(rppg_value)
+                    if len(self.rppg_signal) > self.frame_buffer_limit:
+                        self.rppg_signal.pop(0)
+                break
 
-            def get_landmark_coords(landmark):
-                return int(landmark.x * w), int(landmark.y * h)
+        # Pose Detection for Respiration
+        pose_results = self.pose.process(rgb_frame)
+        if pose_results.pose_landmarks:
+            h_img, w_img, _ = frame.shape
+            rs = pose_results.pose_landmarks.landmark[self.mp_pose.PoseLandmark.RIGHT_SHOULDER]
+            ls = pose_results.pose_landmarks.landmark[self.mp_pose.PoseLandmark.LEFT_SHOULDER]
+            x1_r, y1_r = int(rs.x * w_img), int(rs.y * h_img)
+            x1_l, y1_l = int(ls.x * w_img), int(ls.y * h_img)
+            left = max(min(x1_r, x1_l) - 20, 0)
+            top = max(min(y1_r, y1_l) - 65, 0)
+            right = min(max(x1_r, x1_l) + 20, w_img)
+            bottom = min(max(y1_r, y1_l) + 20, h_img)
+            cv2.rectangle(frame, (left, top), (right, bottom), (255, 0, 0), 2)
+            avg_y_shoulder = np.mean([y1_r, y1_l])
+            self.resp_signal.append(-avg_y_shoulder)
+            if len(self.resp_signal) > self.frame_buffer_limit:
+                self.resp_signal.pop(0)
 
-            try:
-                rs = results.pose_landmarks.landmark[mp_pose.PoseLandmark.RIGHT_SHOULDER]
-                ls = results.pose_landmarks.landmark[mp_pose.PoseLandmark.LEFT_SHOULDER]
+        if rppg_value is not None:
+            self.rppg_label.setText(f"rPPG (Y mean): {rppg_value:.2f}")
 
-                x1_r, y1_r = get_landmark_coords(rs)
-                x1_l, y1_l = get_landmark_coords(ls)
+        self.ax_rppg.clear()
+        self.ax_rppg.plot(self.rppg_signal, color='orange')
+        self.ax_rppg.set_title("rPPG Signal")
+        self.ax_resp.clear()
+        self.ax_resp.plot(self.resp_signal, color='green')
+        self.ax_resp.set_title("Respiration Signal")
+        self.canvas.draw()
 
-                def clamp(val, minval, maxval):
-                    return max(minval, min(val, maxval))
+        rgb_show = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        h, w, ch = rgb_show.shape
+        bytes_per_line = ch * w
+        qt_image = QImage(rgb_show.data, w, h, bytes_per_line, QImage.Format_RGB888)
+        self.video_label.setPixmap(QPixmap.fromImage(qt_image))
 
-<<<<<<< HEAD
-                # Calculate bounding box coordinates
-=======
-                # Hitung koordinat bounding box
->>>>>>> dd7a3c98232a186995554fbf74bca290427417fa
-                left = clamp(min(x1_r, x1_l) - 20, 0, w)
-                top = clamp(min(y1_r, y1_l) - 65, 0, h)
-                right = clamp(max(x1_r, x1_l) + 20, 0, w)
-                bottom = clamp(max(y1_r, y1_l) + 20, 0, h)
+    def closeEvent(self, event):
+        self.cap.release()
+        self.pose.close()
+        self.face_detector.close()
+        event.accept()
 
-<<<<<<< HEAD
-                # Draw bounding box
-                cv2.rectangle(frame, (left, top), (right, bottom), (255, 0, 0), 2)
-
-                # Calculate average y-coordinate of shoulders
-=======
-                # Gambar bounding box
-                cv2.rectangle(frame, (left, top), (right, bottom), (255, 0, 0), 2)
-
-                # Hitung rata-rata koordinat y dari bahu
->>>>>>> dd7a3c98232a186995554fbf74bca290427417fa
-                avg_y_shoulder = np.mean([y1_r, y1_l])
-                resp_signal.append(-avg_y_shoulder)
-                if len(resp_signal) > frame_buffer_limit:
-                    resp_signal.pop(0)
-
-                update_plot()
-
-            except IndexError:
-                print("Landmark tidak lengkap.")
-
-        plot_image = plot_to_image(fig)
-        plot_image = cv2.resize(plot_image, (frame.shape[1], plot_image.shape[0]))
-
-        combined_image = np.vstack((frame, plot_image))
-<<<<<<< HEAD
-        cv2.imshow("Respiration Signal and Webcam", combined_image)
-
-        if cv2.waitKey(1) & 0xFF == ord("q") or cv2.getWindowProperty("Respiration Signal and Webcam", cv2.WND_PROP_VISIBLE) < 1:
-=======
-        cv2.imshow("Sinyal Pernapasan dan Webcam", combined_image)
-
-        if cv2.waitKey(1) & 0xFF == ord("q") or cv2.getWindowProperty("Sinyal Pernapasan dan Webcam", cv2.WND_PROP_VISIBLE) < 1:
->>>>>>> dd7a3c98232a186995554fbf74bca290427417fa
-            break
-
-except Exception as e:
-    print(f"Terjadi error: {e}")
-
-finally:
-    cap.release()
-    cv2.destroyAllWindows()
-<<<<<<< HEAD
-    pose.close()
-=======
-    pose.close()
->>>>>>> dd7a3c98232a186995554fbf74bca290427417fa
+if __name__ == "__main__":
+    app = QApplication(sys.argv)
+    win = MainWindow()
+    win.show()
+    sys.exit(app.exec_())
