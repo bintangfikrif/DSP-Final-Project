@@ -1,4 +1,7 @@
+<<<<<<< HEAD
 # Final Project
+=======
+>>>>>>> dd7a3c98232a186995554fbf74bca290427417fa
 import cv2
 import numpy as np
 import matplotlib.pyplot as plt
@@ -13,11 +16,19 @@ frame_buffer_limit = time_window * fps
 frame_buffer = []
 STANDARD_SIZE = (640, 480)
 
+<<<<<<< HEAD
 # MediaPipe Pose
 mp_pose = mp.solutions.pose
 pose = mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5)
 
 # Fungsi konversi Matplotlib ke OpenCV image
+=======
+# Pose MediaPipe
+mp_pose = mp.solutions.pose
+pose = mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5)
+
+# Fungsi untuk mengonversi plot Matplotlib ke gambar OpenCV
+>>>>>>> dd7a3c98232a186995554fbf74bca290427417fa
 def plot_to_image(fig):
     canvas = FigureCanvas(fig)
     canvas.draw()
@@ -29,7 +40,11 @@ def plot_to_image(fig):
     return image_rgb
 
 
+<<<<<<< HEAD
 # Ekstraksi sinyal rPPG (jika dibutuhkan)
+=======
+# Fungsi untuk ekstraksi sinyal rPPG
+>>>>>>> dd7a3c98232a186995554fbf74bca290427417fa
 def extract_rppg_signal(frame):
     yuv_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2YUV)
     y_channel = yuv_frame[:, :, 0]
@@ -40,11 +55,19 @@ try:
     if not cap.isOpened():
         raise Exception("Kamera tidak bisa dibuka.")
 
+<<<<<<< HEAD
     # Setup plot
     fig, ax_resp = plt.subplots(figsize=(8, 4))
     ax_resp.set_title("Real-Time Respiration Signal")
     ax_resp.set_xlabel("Frame")
     ax_resp.set_ylabel("Signal Amplitude")
+=======
+    # Pengaturan plot
+    fig, ax_resp = plt.subplots(figsize=(8, 4))
+    ax_resp.set_title("Sinyal Pernapasan Real-Time")
+    ax_resp.set_xlabel("Frame")
+    ax_resp.set_ylabel("Amplitudo Sinyal")
+>>>>>>> dd7a3c98232a186995554fbf74bca290427417fa
     line_resp, = ax_resp.plot([], [], color='green')
 
     def update_plot():
@@ -57,6 +80,11 @@ try:
         if not ret:
             print("Gagal membaca frame.")
             break
+<<<<<<< HEAD
+=======
+        
+        frame = cv2.flip(frame, 1)
+>>>>>>> dd7a3c98232a186995554fbf74bca290427417fa
 
         frame = cv2.resize(frame, STANDARD_SIZE)
         frame_buffer.append(frame)
@@ -82,16 +110,27 @@ try:
                 def clamp(val, minval, maxval):
                     return max(minval, min(val, maxval))
 
+<<<<<<< HEAD
                 # Calculate bounding box coordinates
+=======
+                # Hitung koordinat bounding box
+>>>>>>> dd7a3c98232a186995554fbf74bca290427417fa
                 left = clamp(min(x1_r, x1_l) - 20, 0, w)
                 top = clamp(min(y1_r, y1_l) - 65, 0, h)
                 right = clamp(max(x1_r, x1_l) + 20, 0, w)
                 bottom = clamp(max(y1_r, y1_l) + 20, 0, h)
 
+<<<<<<< HEAD
                 # Draw bounding box
                 cv2.rectangle(frame, (left, top), (right, bottom), (255, 0, 0), 2)
 
                 # Calculate average y-coordinate of shoulders
+=======
+                # Gambar bounding box
+                cv2.rectangle(frame, (left, top), (right, bottom), (255, 0, 0), 2)
+
+                # Hitung rata-rata koordinat y dari bahu
+>>>>>>> dd7a3c98232a186995554fbf74bca290427417fa
                 avg_y_shoulder = np.mean([y1_r, y1_l])
                 resp_signal.append(-avg_y_shoulder)
                 if len(resp_signal) > frame_buffer_limit:
@@ -106,9 +145,15 @@ try:
         plot_image = cv2.resize(plot_image, (frame.shape[1], plot_image.shape[0]))
 
         combined_image = np.vstack((frame, plot_image))
+<<<<<<< HEAD
         cv2.imshow("Respiration Signal and Webcam", combined_image)
 
         if cv2.waitKey(1) & 0xFF == ord("q") or cv2.getWindowProperty("Respiration Signal and Webcam", cv2.WND_PROP_VISIBLE) < 1:
+=======
+        cv2.imshow("Sinyal Pernapasan dan Webcam", combined_image)
+
+        if cv2.waitKey(1) & 0xFF == ord("q") or cv2.getWindowProperty("Sinyal Pernapasan dan Webcam", cv2.WND_PROP_VISIBLE) < 1:
+>>>>>>> dd7a3c98232a186995554fbf74bca290427417fa
             break
 
 except Exception as e:
@@ -117,4 +162,8 @@ except Exception as e:
 finally:
     cap.release()
     cv2.destroyAllWindows()
+<<<<<<< HEAD
     pose.close()
+=======
+    pose.close()
+>>>>>>> dd7a3c98232a186995554fbf74bca290427417fa
