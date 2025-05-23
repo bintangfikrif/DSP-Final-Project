@@ -1,5 +1,5 @@
 # Tugas Besar Mata Kuliah Pengolahan Sinyal Digital (IF3024)
-# Dosen Pengampu: Martin Clinton Tosima Manullang, S.T.,M.T.
+## Dosen Pengampu: Martin Clinton Tosima Manullang, S.T.,M.T.
 
 ## Anggota Kelompok
 | Nama                        | NIM       | ID GitHub                                         |
@@ -19,3 +19,12 @@
 ## Cara Menjalankan
 
 ## Logbook
+| Minggu ke-    | Progress                                                              | 
+|---------------|-----------------------------------------------------------------------|
+| 1             | - Inisiasi GitHub dan Setup Project                                   |
+|               | - Integrasi Video Capture dengan Processing untuk Sinyal Respirasi    |
+| 2             | - Design GUI                                                          |
+|               | - Integrasi Video Capture dengan Processing untuk Sinyal rPPG         |
+|               | - Percobaan menampilkan live signal monitoring                        |
+| 3             |                                                                       |
+| 4             |                                                                       |
