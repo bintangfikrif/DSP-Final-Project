@@ -4,6 +4,7 @@ import cv2
 import numpy as np
 import mediapipe as mp
 import matplotlib.pyplot as plt
+import scipy.signal as signal
 from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QLabel
 from PyQt5.QtGui import QImage, QPixmap
 from PyQt5.QtCore import Qt, QTimer
@@ -38,6 +39,13 @@ class MainWindow(QWidget):
         self.rppg_label = QLabel("rPPG: -")
         self.rppg_label.setStyleSheet("font-size: 20px; color: orange;")
 
+        # HR and Respiration rate display
+        self.hr_label = QLabel("HR: - BPM")
+        self.hr_label.setStyleSheet("font-size: 20px; color: red; font-weight: bold;")
+
+        self.rr_label = QLabel("RR: - Breaths/min")
+        self.rr_label.setStyleSheet("font-size: 20px; color: blue; font-weight: bold;")
+
         # Matplotlib plots
         self.fig, (self.ax_rppg, self.ax_resp) = plt.subplots(2, 1, figsize=(6, 4))
         self.canvas = FigureCanvas(self.fig)
@@ -46,11 +54,26 @@ class MainWindow(QWidget):
         self.fps = 35
         self.frame_buffer_limit = 30 * self.fps
 
+        # rPPG filter parameters (0.75 Hz to 4 Hz for heart rate)
+        # Normalizing frequencies by Nyquist frequency (fs/2)
+        self.rppg_lowcut = 0.75
+        self.rppg_highcut = 4.0
+        self.rppg_nyquist = 0.5 * self.fps
+        self.rppg_b, self.rppg_a = signal.butter(3, [self.rppg_lowcut / self.rppg_nyquist, self.rppg_highcut / self.rppg_nyquist], btype='band')
+
+        # Respiration filter parameters (0.1 Hz to 0.5 Hz for respiration rate)
+        self.resp_lowcut = 0.1
+        self.resp_highcut = 0.5
+        self.resp_nyquist = 0.5 * self.fps
+        self.resp_b, self.resp_a = signal.butter(3, [self.resp_lowcut / self.resp_nyquist, self.resp_highcut / self.resp_nyquist], btype='band')
+
         # Layout
         vbox = QVBoxLayout()
         vbox.addWidget(self.video_label)
         vbox.addWidget(self.rppg_label)
         vbox.addWidget(self.canvas)
+        vbox.addWidget(self.hr_label)
+        vbox.addWidget(self.rr_label)
         self.setLayout(vbox)
 
         # Video capture
@@ -80,8 +103,26 @@ class MainWindow(QWidget):
                 h = int(bbox.height * ih)
                 x, y = max(0, x), max(0, y)
                 w, h = min(frame.shape[1] - x, w), min(frame.shape[0] - y, h)
-                cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
-                rppg_value = extract_rppg_signal(frame, (x, y, w, h))
+                
+                # Define forehead ROI as a portion of the detected face bounding box
+                # Example: Top 30% of the face, centered horizontally
+                forehead_x = int(x + w * 0.25) # Start from 25% of face width from left
+                forehead_y = int(y + h * 0.05) # Start from 5% of face height from top
+                forehead_w = int(w * 0.5) # Take 50% of face width
+                forehead_h = int(h * 0.25) # Take 25% of face height
+
+                # Ensure ROI stays within frame boundaries
+                forehead_x = max(0, forehead_x)
+                forehead_y = max(0, forehead_y)
+                forehead_w = min(frame.shape[1] - forehead_x, forehead_w)
+                forehead_h = min(frame.shape[0] - forehead_y, forehead_h)
+
+                # Draw rectangle for the new forehead ROI
+                cv2.rectangle(frame, (forehead_x, forehead_y), (forehead_x + forehead_w, forehead_y + forehead_h), (0, 255, 255), 2) # Yellow color
+
+                # Use the forehead ROI for rPPG signal extraction
+                rppg_value = extract_rppg_signal(frame, (forehead_x, forehead_y, forehead_w, forehead_h))
+
                 if rppg_value is not None:
                     self.rppg_signal.append(rppg_value)
                     if len(self.rppg_signal) > self.frame_buffer_limit:
@@ -109,13 +150,61 @@ class MainWindow(QWidget):
         if rppg_value is not None:
             self.rppg_label.setText(f"rPPG (Y mean): {rppg_value:.2f}")
 
+        # Apply filter only if enough data points are available
+        min_signal_length = int(2 * self.fps) # Roughly 2 seconds of data
+
+        if len(self.rppg_signal) > min_signal_length:
+            filtered_rppg_signal = signal.filtfilt(self.rppg_b, self.rppg_a, self.rppg_signal).tolist()
+        else:
+            filtered_rppg_signal = self.rppg_signal # Use raw signal if not enough data
+
+        if len(self.resp_signal) > min_signal_length:
+            filtered_resp_signal = signal.filtfilt(self.resp_b, self.resp_a, self.resp_signal).tolist()
+        else:
+            filtered_resp_signal = self.resp_signal # Use raw signal if not enough data
+
+        current_hr = -1.0 # Initialize with an invalid value
+        current_rr = -1.0 # Initialize with an invalid value
+
+        if len(filtered_rppg_signal) > min_signal_length:
+            # Calculate HR using FFT
+            rppg_fft = np.abs(np.fft.fft(filtered_rppg_signal))
+            freqs = np.fft.fftfreq(len(filtered_rppg_signal), 1/self.fps)
+            # Find the peak in the relevant HR frequency range (0.75 Hz to 4 Hz)
+            rppg_valid_indices = np.where((freqs >= self.rppg_lowcut) & (freqs <= self.rppg_highcut))
+            if len(rppg_valid_indices[0]) > 0:
+                dominant_rppg_freq_idx = rppg_valid_indices[0][np.argmax(rppg_fft[rppg_valid_indices])]
+                dominant_rppg_freq = freqs[dominant_rppg_freq_idx]
+                current_hr = dominant_rppg_freq * 60 # Convert Hz to BPM
+
+        if len(filtered_resp_signal) > min_signal_length:
+            # Calculate RR using FFT
+            resp_fft = np.abs(np.fft.fft(filtered_resp_signal))
+            resp_freqs = np.fft.fftfreq(len(filtered_resp_signal), 1/self.fps)
+            # Find the peak in the relevant RR frequency range (0.1 Hz to 0.5 Hz)
+            resp_valid_indices = np.where((resp_freqs >= self.resp_lowcut) & (resp_freqs <= self.resp_highcut))
+            if len(resp_valid_indices[0]) > 0:
+                dominant_resp_freq_idx = resp_valid_indices[0][np.argmax(resp_fft[resp_valid_indices])]
+                dominant_resp_freq = resp_freqs[dominant_resp_freq_idx]
+                current_rr = dominant_resp_freq * 60 # Convert Hz to Breaths/min
+
         self.ax_rppg.clear()
-        self.ax_rppg.plot(self.rppg_signal, color='orange')
+        self.ax_rppg.plot(filtered_rppg_signal, color='orange')
         self.ax_rppg.set_title("rPPG Signal")
         self.ax_resp.clear()
-        self.ax_resp.plot(self.resp_signal, color='green')
+        self.ax_resp.plot(filtered_resp_signal, color='green')
         self.ax_resp.set_title("Respiration Signal")
         self.canvas.draw()
+
+        if current_hr > 0:
+            self.hr_label.setText(f"HR: {current_hr:.1f} BPM")
+        else:
+            self.hr_label.setText("HR: - BPM")
+
+        if current_rr > 0:
+            self.rr_label.setText(f"RR: {current_rr:.1f} Breaths/min")
+        else:
+            self.rr_label.setText("RR: - Breaths/min")
 
         rgb_show = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         h, w, ch = rgb_show.shape
