@@ -27,12 +27,14 @@ Berikut ini adalah teknologi yang digunakan dalam mengembangkan proyek ini:
 ## Cara Menjalankan
 
 ## Logbook
-| Minggu ke-    | Progress                                                              | 
-|---------------|-----------------------------------------------------------------------|
-| 1             | - Inisiasi GitHub dan Setup Project                                   |
-|               | - Integrasi Video Capture dengan Processing untuk Sinyal Respirasi    |
-| 2             | - Design GUI                                                          |
-|               | - Integrasi Video Capture dengan Processing untuk Sinyal rPPG         |
-|               | - Percobaan menampilkan live signal monitoring                        |
-| 3             |                                                                       |
-| 4             |                                                                       |
+| Minggu ke-    | Progress                                                                           | 
+|---------------|------------------------------------------------------------------------------------|
+| 1             | - Inisiasi GitHub dan Setup Project                                                |
+|               | - Integrasi Video Capture dengan Processing untuk Sinyal Respirasi                 |
+| 2             | - Design GUI                                                                       |
+|               | - Integrasi Video Capture dengan Processing untuk Sinyal rPPG                      |
+|               | - Percobaan menampilkan live signal monitoring                                     |
+| 3             | - Menerapkan filter band-pass untuk sinyal rPPG dan respirasi                      |
+|               | - Menerapkan perhitungan Heart Rate (HR) dan Respiration Rate (RR) menggunakan FFT |
+|               | - Menambahkan label GUI untuk menampilkan nilai HR dan RR secara real-time         |
+| 4             |                                                                                    |
