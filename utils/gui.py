@@ -1,10 +1,15 @@
-# health_tracker_ui.py
 from PyQt5.QtWidgets import (QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout,
                              QGridLayout, QGroupBox, QApplication,QSizePolicy)
 from PyQt5.QtGui import QFont, QPixmap
 from PyQt5.QtCore import Qt
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 import matplotlib.pyplot as plt
+import os
+
+
+current_dir = os.path.dirname(os.path.abspath(__file__))
+icon_path_heart = os.path.join(current_dir, "..", "icon", "heart-icon.png")
+icon_path_lungs = os.path.join(current_dir, "..", "icon", "lungs-icon.png")
 
 class HealthTrackerUI(QWidget):
     def __init__(self, parent=None):
@@ -17,7 +22,7 @@ class HealthTrackerUI(QWidget):
         self.main_layout = QVBoxLayout(self) 
 
         # --- Title Label ---
-        self.title_label = QLabel("Realtime Health Tracker")
+        self.title_label = QLabel("Realtime rPPG and Respiration Rate Tracker - by BEE Team")
         self.title_label.setAlignment(Qt.AlignCenter)
         self.main_layout.addWidget(self.title_label)
 
@@ -52,7 +57,8 @@ class HealthTrackerUI(QWidget):
 
         hr_info_layout = QHBoxLayout()
         self.hr_icon_label = QLabel() # Placeholder for icon
-        self.hr_icon_label.setPixmap(QPixmap("icon/heart-icon.png").scaled(30,30,Qt.KeepAspectRatio))
+        if os.path.exists(icon_path_heart):
+            self.hr_icon_label.setPixmap(QPixmap(icon_path_heart).scaled(30,30,Qt.KeepAspectRatio))
         self.hr_value_label = QLabel("-- BPM")
         hr_info_layout.addWidget(self.hr_icon_label)
         hr_info_layout.addStretch()
@@ -70,7 +76,8 @@ class HealthTrackerUI(QWidget):
 
         rr_info_layout = QHBoxLayout()
         self.rr_icon_label = QLabel() # Placeholder for icon
-        self.rr_icon_label.setPixmap(QPixmap("icon/lungs-icon.png").scaled(30,30,Qt.KeepAspectRatio))
+        if os.path.exists(icon_path_lungs):
+            self.rr_icon_label.setPixmap(QPixmap(icon_path_lungs).scaled(30,30,Qt.KeepAspectRatio))
         self.rr_value_label = QLabel("-- Breaths/min")
         rr_info_layout.addWidget(self.rr_icon_label)
         rr_info_layout.addStretch()

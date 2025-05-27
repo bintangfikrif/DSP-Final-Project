@@ -1,19 +1,17 @@
-# main.py (Modified to integrate MediaPipe Tasks models)
 import sys
 import cv2
 import numpy as np
-import mediapipe as mp # Keep for mp.Image
+import mediapipe as mp
 from mediapipe.tasks import python as mp_python
 from mediapipe.tasks.python import vision as mp_vision
 import scipy.signal as signal
 from PyQt5.QtWidgets import QApplication, QMainWindow
 from PyQt5.QtGui import QImage, QPixmap
 from PyQt5.QtCore import Qt, QTimer
+from utils.gui import HealthTrackerUI
+from utils.signal_processing import extract_rppg_signal, butter_bandpass, calculate_rate_from_fft
 
-from gui import HealthTrackerUI
-from signal_processing import extract_rppg_signal, butter_bandpass, calculate_rate_from_fft
-
-# Helper function to draw landmarks (optional, but good for visualization)
+# Helper function to draw landmarks
 def draw_landmarks_on_image(rgb_image, detection_result):
     from mediapipe.python.solutions import drawing_utils as mp_drawing
     
@@ -26,8 +24,8 @@ def draw_landmarks_on_image(rgb_image, detection_result):
         
         mp_drawing.draw_landmarks(
             annotated_image,
-            pose_landmarks_proto, # Expects a list of NormalizedLandmark
-            mp.solutions.pose.POSE_CONNECTIONS, # Use standard pose connections
+            pose_landmarks_proto, 
+            mp.solutions.pose.POSE_CONNECTIONS, 
             mp_drawing.DrawingSpec(color=(0,255,0), thickness=2, circle_radius=2),
             mp_drawing.DrawingSpec(color=(0,0,255), thickness=2, circle_radius=2)
         )
