@@ -1,4 +1,3 @@
-# main.py (dengan komentar)
 import sys
 import cv2
 import numpy as np
@@ -18,7 +17,7 @@ def draw_landmarks_on_image(rgb_image, detection_result):
     from mediapipe.python.solutions import drawing_utils as mp_drawing # Import utilitas menggambar dari MediaPipe
     
     pose_landmarks_list = detection_result.pose_landmarks
-    annotated_image = np.copy(rgb_image) # Salin gambar agar tidak memodifikasi gambar asli
+    annotated_image = np.copy(rgb_image)
 
     # Iterasi melalui setiap set landmark pose yang terdeteksi
     for idx in range(len(pose_landmarks_list)):
@@ -120,6 +119,14 @@ class MainWindow(QMainWindow):
         self.timer = QTimer(self) 
         self.timer.timeout.connect(self.update_frame) # Hubungkan timeout timer ke metode update_frame
 
+        # --- Variabel untuk Buffering/Smoothing Sinyal ---
+        self.process_interval = self.fps // 2
+        self.frames_since_last_process = 0
+        self.last_processed_hr = 0.0
+        self.last_processed_rr = 0.0
+        self.last_filtered_rppg = []
+        self.last_filtered_resp = []
+
         # --- Hubungkan Tombol UI ke Metode ---
         self.ui.start_button.clicked.connect(self.start_processing)
         self.ui.end_button.clicked.connect(self.end_processing)
@@ -148,8 +155,25 @@ class MainWindow(QMainWindow):
         self.timer.start(int(1000.0 / self.fps)) # Memulai timer sesuai fps
         self.ui.start_button.setEnabled(False) # Nonaktifkan tombol "START"
         self.ui.end_button.setEnabled(True)   # Aktifkan tombol "END"
-        self.rppg_signal.clear() # Bersihkan buffer sinyal
+        
+        # Reset buffer dan state untuk smoothing
+        self.rppg_signal.clear()
         self.resp_signal.clear()
+        self.frames_since_last_process = 0
+        self.last_processed_hr = 0.0
+        self.last_processed_rr = 0.0
+        self.last_filtered_rppg = []
+        self.last_filtered_resp = []
+        
+        # Clear plots and labels initially
+        self._update_gui_plots_and_labels(
+            np.zeros((self.video_label.height() if self.video_label.height() > 10 else 480, 
+                      self.video_label.width() if self.video_label.width() > 10 else 640, 3), dtype=np.uint8), # Placeholder
+            self.last_filtered_rppg,
+            self.last_filtered_resp,
+            self.last_processed_hr,
+            self.last_processed_rr
+        )
         print("Proses dimulai.")
 
     def end_processing(self):
@@ -163,11 +187,19 @@ class MainWindow(QMainWindow):
             self.cap = None
         self.ui.start_button.setEnabled(True)  # Aktifkan tombol "START"
         self.ui.end_button.setEnabled(False) # Nonaktifkan tombol "END"
+        
         # Reset tampilan UI
         self.video_label.setText("Feed Kamera Berakhir. Tekan START.")
         self.video_label.setStyleSheet(self.ui.styleSheet() + " QLabel#VideoLabel { background-color: black; }") 
         self.hr_label.setText("-- BPM") 
         self.rr_label.setText("-- Breaths/min") 
+        
+        # Clear last processed data as well 
+        self.last_filtered_rppg = []
+        self.last_filtered_resp = []
+        self.last_processed_hr = 0.0
+        self.last_processed_rr = 0.0
+        
         self.ax_rppg.clear() 
         self.ax_resp.clear() 
         self.ui._apply_styles() # Terapkan kembali style untuk mereset judul plot
@@ -212,16 +244,13 @@ class MainWindow(QMainWindow):
             for detection in face_detector_result.detections: # Iterasi melalui semua deteksi wajah
                 bbox = detection.bounding_box
                 
-                # Dimensi gambar input untuk denormalisasi bounding box jika perlu
                 ih, iw = mp_image_input.height, mp_image_input.width
 
-                # Koordinat bounding box wajah (asumsi sudah dalam piksel dari FaceDetector)
                 x = int(bbox.origin_x)
                 y = int(bbox.origin_y)
                 w = int(bbox.width)
                 h = int(bbox.height)
                 
-                # Pastikan ROI berada dalam batas frame
                 frame_h, frame_w, _ = frame_to_draw_on.shape
                 x = max(0, min(x, frame_w -1))
                 y = max(0, min(y, frame_h -1))
@@ -229,24 +258,20 @@ class MainWindow(QMainWindow):
                 h = max(0, min(h, frame_h - y))
 
                 if w > 0 and h > 0 :
-                    # Tentukan ROI dahi relatif terhadap bounding box wajah
                     forehead_x = int(x + w * 0.15) 
                     forehead_y = int(y + h * 0.05)
                     forehead_w = int(w * 0.7)
                     forehead_h = int(h * 0.25)
 
-                    # Pastikan ROI dahi berada dalam batas frame
                     forehead_x = max(0, min(forehead_x, frame_w -1))
                     forehead_y = max(0, min(forehead_y, frame_h -1))
                     forehead_w = max(0, min(forehead_w, frame_w - forehead_x))
                     forehead_h = max(0, min(forehead_h, frame_h - forehead_y))
 
                     if forehead_w > 0 and forehead_h > 0:
-                        # Gambar persegi panjang ROI dahi pada frame
                         cv2.rectangle(frame_to_draw_on, (forehead_x, forehead_y), 
                                       (forehead_x + forehead_w, forehead_y + forehead_h), (0, 255, 255), 2)
                         
-                        # Ekstraksi sinyal rPPG dari frame BGR (frame_to_draw_on)
                         rppg_value = extract_rppg_signal(frame_to_draw_on, 
                                                          (forehead_x, forehead_y, forehead_w, forehead_h))
 
@@ -254,7 +279,7 @@ class MainWindow(QMainWindow):
                             self.rppg_signal.append(rppg_value) 
                             if len(self.rppg_signal) > self.frame_buffer_limit: # Jaga ukuran buffer
                                 self.rppg_signal.pop(0) 
-                break # Proses hanya wajah pertama yang terdeteksi untuk simplisitas
+                break 
         return rppg_value
 
 
@@ -272,27 +297,22 @@ class MainWindow(QMainWindow):
         pose_landmarker_result = self.pose_landmarker.detect(mp_image_input) # Deteksi pose
         
         if pose_landmarker_result.pose_landmarks:
-            # Ambil landmark untuk pose pertama yang terdeteksi
             landmarks = pose_landmarker_result.pose_landmarks[0]
             
-            h_img, w_img, _ = frame_to_draw_on.shape # Dimensi frame untuk denormalisasi
+            h_img, w_img, _ = frame_to_draw_on.shape
 
             try:
-                # Dapatkan landmark bahu kanan (12) dan kiri (11)
                 rs_landmark = landmarks[12] # Bahu kanan
                 ls_landmark = landmarks[11] # Bahu kiri
 
-                # Denormalisasi koordinat y
                 y1_r = int(rs_landmark.y * h_img)
                 y1_l = int(ls_landmark.y * h_img)
                 
-                # Visualisasi titik bahu (opsional)
-                cv2.circle(frame_to_draw_on, (int(rs_landmark.x * w_img), y1_r), 5, (255,0,0), -1) # Bahu kanan (biru)
-                cv2.circle(frame_to_draw_on, (int(ls_landmark.x * w_img), y1_l), 5, (0,255,0), -1) # Bahu kiri (hijau)
+                cv2.circle(frame_to_draw_on, (int(rs_landmark.x * w_img), y1_r), 5, (255,0,0), -1) 
+                cv2.circle(frame_to_draw_on, (int(ls_landmark.x * w_img), y1_l), 5, (0,255,0), -1) 
 
-                # Hitung rata-rata koordinat y bahu sebagai sinyal respirasi
                 avg_y_shoulder = np.mean([y1_r, y1_l]) 
-                self.resp_signal.append(-avg_y_shoulder) # Negatif agar bentuk gelombang umum (naik saat inspirasi)
+                self.resp_signal.append(-avg_y_shoulder)
                 if len(self.resp_signal) > self.frame_buffer_limit: # Jaga ukuran buffer
                     self.resp_signal.pop(0) 
             except IndexError:
@@ -309,18 +329,21 @@ class MainWindow(QMainWindow):
             tuple: (filtered_rppg_signal, filtered_resp_signal, current_hr, current_rr)
         """
         filtered_rppg_signal = self.rppg_signal 
-        if len(self.rppg_signal) > self.min_signal_length: 
+        if len(self.rppg_signal) >= self.min_signal_length: # Geq min_signal_length for stability
             # Terapkan filter bandpass ke sinyal rPPG
             filtered_rppg_signal = signal.filtfilt(self.rppg_b, self.rppg_a, self.rppg_signal).tolist() 
+        else: # If signal is too short, return a copy of the original to avoid modifying it if it's self.rppg_signal
+            filtered_rppg_signal = list(self.rppg_signal)
+
 
         filtered_resp_signal = self.resp_signal 
-        if len(self.resp_signal) > self.min_signal_length: 
+        if len(self.resp_signal) >= self.min_signal_length: # Geq min_signal_length for stability
             # Terapkan filter bandpass ke sinyal respirasi
             filtered_resp_signal = signal.filtfilt(self.resp_b, self.resp_a, self.resp_signal).tolist() 
+        else:
+            filtered_resp_signal = list(self.resp_signal)
 
-        # Hitung HR dari sinyal rPPG yang difilter
         current_hr = calculate_rate_from_fft(filtered_rppg_signal, self.fps, self.rppg_lowcut, self.rppg_highcut) 
-        # Hitung RR dari sinyal respirasi yang difilter
         current_rr = calculate_rate_from_fft(filtered_resp_signal, self.fps, self.resp_lowcut, self.resp_highcut) 
         return filtered_rppg_signal, filtered_resp_signal, current_hr, current_rr
 
@@ -336,12 +359,14 @@ class MainWindow(QMainWindow):
         """
         # Perbarui plot rPPG
         self.ax_rppg.clear() 
-        self.ax_rppg.plot(filtered_rppg, color='#FF6B6B') 
+        if filtered_rppg: # Only plot if there's data
+            self.ax_rppg.plot(filtered_rppg, color='#FF6B6B')
         self.canvas_rppg.draw() 
 
         # Perbarui plot respirasi
         self.ax_resp.clear() 
-        self.ax_resp.plot(filtered_resp, color='#6BCBFF') 
+        if filtered_resp: # Only plot if there's data
+            self.ax_resp.plot(filtered_resp, color='#6BCBFF')
         self.canvas_resp.draw() 
         
         self.ui._apply_styles() 
@@ -359,16 +384,19 @@ class MainWindow(QMainWindow):
             self.rr_label.setText("-- Breaths/min") 
 
         # Tampilkan frame video yang telah diproses
-        display_frame = cv2.cvtColor(frame_processed, cv2.COLOR_BGR2RGB) 
-        h, w, ch = display_frame.shape 
-        bytes_per_line = ch * w 
-        qt_image = QImage(display_frame.data, w, h, bytes_per_line, QImage.Format_RGB888) 
-        
-        pixmap = QPixmap.fromImage(qt_image)
-        # Skala pixmap agar sesuai dengan label video sambil menjaga aspek rasio
-        self.video_label.setPixmap(pixmap.scaled(
-            self.video_label.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation)) 
-
+        if frame_processed is not None and frame_processed.size > 0 :
+            display_frame = cv2.cvtColor(frame_processed, cv2.COLOR_BGR2RGB)
+            h, w, ch = display_frame.shape
+            bytes_per_line = ch * w
+            qt_image = QImage(display_frame.data, w, h, bytes_per_line, QImage.Format_RGB888)
+            
+            pixmap = QPixmap.fromImage(qt_image)
+            self.video_label.setPixmap(pixmap.scaled(
+                self.video_label.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation))
+        else:
+             # Fallback or clear if frame_processed is not valid
+            self.video_label.setText("Processing...") # Or clear pixmap
+            self.video_label.setStyleSheet("QLabel#VideoLabel { background-color: black; }")
 
     def update_frame(self): 
         """
@@ -378,20 +406,42 @@ class MainWindow(QMainWindow):
         """
         original_frame, rgb_frame, mp_image = self._preprocess_frame() 
         if original_frame is None or mp_image is None:
+            blank_frame_for_display = np.zeros((self.video_label.height() if self.video_label.height() > 10 else 480, 
+                                               self.video_label.width() if self.video_label.width() > 10 else 640, 3), dtype=np.uint8)
+            self._update_gui_plots_and_labels(blank_frame_for_display, 
+                                             self.last_filtered_rppg, self.last_filtered_resp, 
+                                             self.last_processed_hr, self.last_processed_rr)
             return
 
-        # Salin frame untuk menggambar agar frame asli tidak termodifikasi jika digunakan di tempat lain
         frame_to_display = original_frame.copy()
 
-        # Proses sinyal rPPG dan respirasi
-        self._process_rppg_signal(frame_to_display, mp_image) 
+        # Selalu ekstrak sinyal untuk menjaga buffer tetap update
+        self._process_rppg_signal(frame_to_display, mp_image)
         self._process_respiration_signal(frame_to_display, mp_image)
-        
-        # Filter sinyal dan hitung laju HR/RR
-        filtered_rppg, filtered_resp, current_hr, current_rr = self._filter_and_calculate_rates()
-        
-        # Perbarui plot dan label di GUI
-        self._update_gui_plots_and_labels(frame_to_display, filtered_rppg, filtered_resp, current_hr, current_rr)
+        self.frames_since_last_process += 1
+
+        # Proses sinyal dan update rate hanya pada interval yang ditentukan
+        if self.frames_since_last_process >= self.process_interval:
+            self.frames_since_last_process = 0
+            
+            # Lakukan filtering dan perhitungan rate
+            if len(self.rppg_signal) >= self.min_signal_length and len(self.resp_signal) >= self.min_signal_length:
+                filtered_rppg, filtered_resp, current_hr, current_rr = self._filter_and_calculate_rates()
+                
+                # Simpan hasil proses terakhir
+                self.last_filtered_rppg = filtered_rppg
+                self.last_filtered_resp = filtered_resp
+                self.last_processed_hr = current_hr
+                self.last_processed_rr = current_rr
+
+        # Selalu update GUI:
+        self._update_gui_plots_and_labels(
+            frame_to_display,
+            self.last_filtered_rppg,
+            self.last_filtered_resp,
+            self.last_processed_hr,
+            self.last_processed_rr
+        )
 
     def closeEvent(self, event): 
         """
