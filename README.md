@@ -16,6 +16,18 @@ Dengan pendekatan non-kontak ini, aplikasi dapat memberikan pemantauan dasar kon
 ## Fitur Aplikasi
 
 ## Library yang Digunakan
+| Library    | Fungsi       |
+|---------------------|--------------------|
+|Opencv-python 4.8.1.7|digunakan untuk pemrosesan video dan citra secara real-time dari
+webcam|
+|Mediapipe 0.10.7|digunakan untuk deteksi landmark wajah dan tubuh, termasuk gerakan bahu
+serta area kulit wajah|
+|PyQt5 5.15.9|digunakan untuk membangun antarmuka pengguna (GUI) dalam bentuk aplikasi
+desktop|
+|Numpy 1.24.3|digunakan untuk manipulasi array numerik dan perhitungan matematis dasar|
+|Scipy 1.11.3|digunakan untuk analisis sinyal digital seperti filter dan transformasi Fourier|
+|Matplotlib 3.7.2|digunakan untuk visualisasi grafik sinyal denyut jantung dan respirasi|
+
 
 ## Teknologi/Tools yang Digunakan
 Berikut ini adalah teknologi yang digunakan dalam mengembangkan proyek ini:
