@@ -190,13 +190,13 @@ class HealthAnalyzer:
 
     def process_rppg_from_face(self, frame_for_signal, face_detection_result):
         """
-        Mengekstrak sinyal rPPG dari ROI wajah (dahi, pipi kiri, pipi kanan),
+        Mengekstrak sinyal rPPG dari ROI wajah (dahi),
         menggambar ROI pada frame, dan menambahkan rata-rata sinyal ke buffer.
         Args:
             frame_for_signal (numpy.ndarray): Frame video (BGR) untuk ekstraksi dan penggambaran.
             face_detection_result: Hasil deteksi wajah dari MediaPipe.
         Returns:
-            float or None: Nilai rPPG mentah rata-rata yang baru diekstrak, atau None jika gagal.
+            float or None: Nilai rPPG mentah yang baru diekstrak, atau None jika gagal.
         """
         if face_detection_result is None or not face_detection_result.detections:
             return None
@@ -216,7 +216,7 @@ class HealthAnalyzer:
         if not (w > 0 and h > 0):
             return None
 
-        extracted_signals = []
+        extracted_signals = [] 
         # Definisi, validasi, ekstraksi, dan penggambaran untuk ROI Dahi
         fh_x, fh_y, fh_w, fh_h = int(x+w*0.25), int(y+h*0.05), int(w*0.5), int(h*0.20)
         fh_x,fh_y = max(0,min(fh_x,frame_w-1)),max(0,min(fh_y,frame_h-1))
@@ -226,31 +226,12 @@ class HealthAnalyzer:
             if val is not None: extracted_signals.append(val)
             cv2.rectangle(frame_for_signal, (fh_x, fh_y), (fh_x + fh_w, fh_y + fh_h), (0, 255, 255), 1) # Cyan
 
-        # Definisi, validasi, ekstraksi, dan penggambaran untuk ROI Pipi Kiri (kanan subjek)
-        lc_x, lc_y, lc_w, lc_h = int(x+w*0.60), int(y+h*0.40), int(w*0.30), int(h*0.30)
-        lc_x,lc_y = max(0,min(lc_x,frame_w-1)),max(0,min(lc_y,frame_h-1))
-        lc_w,lc_h = max(0,min(lc_w,frame_w-lc_x)),max(0,min(lc_h,frame_h-lc_y))
-        if lc_w > 0 and lc_h > 0:
-            val = extract_rppg_signal(frame_for_signal, (lc_x, lc_y, lc_w, lc_h))
-            if val is not None: extracted_signals.append(val)
-            cv2.rectangle(frame_for_signal, (lc_x, lc_y), (lc_x + lc_w, lc_y + lc_h), (255, 0, 255), 1) # Magenta
-
-        # Definisi, validasi, ekstraksi, dan penggambaran untuk ROI Pipi Kanan (kiri subjek)
-        rc_x, rc_y, rc_w, rc_h = int(x+w*0.10), int(y+h*0.40), int(w*0.30), int(h*0.30)
-        rc_x,rc_y = max(0,min(rc_x,frame_w-1)),max(0,min(rc_y,frame_h-1))
-        rc_w,rc_h = max(0,min(rc_w,frame_w-rc_x)),max(0,min(rc_h,frame_h-rc_y))
-        if rc_w > 0 and rc_h > 0:
-            val = extract_rppg_signal(frame_for_signal, (rc_x, rc_y, rc_w, rc_h))
-            if val is not None: extracted_signals.append(val)
-            cv2.rectangle(frame_for_signal, (rc_x, rc_y), (rc_x + rc_w, rc_y + rc_h), (255, 255, 0), 1) # Kuning
-
-        # Rata-ratakan sinyal yang berhasil diekstrak dan tambahkan ke buffer
         if extracted_signals:
-            avg_rppg_value = np.mean(extracted_signals)
-            self.rppg_signal_buffer.append(avg_rppg_value)
+            rppg_value = np.mean(extracted_signals)
+            self.rppg_signal_buffer.append(rppg_value)
             if len(self.rppg_signal_buffer) > self.frame_buffer_limit:
                 self.rppg_signal_buffer.pop(0)
-            return avg_rppg_value
+            return rppg_value
         return None
 
 
