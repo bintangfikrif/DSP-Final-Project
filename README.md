@@ -1,6 +1,8 @@
 # Tugas Besar Mata Kuliah Pengolahan Sinyal Digital (IF3024)
 ## Dosen Pengampu: Martin Clinton Tosima Manullang, S.T.,M.T.
 
+![Poster](/aset/Poster_DSP.png)
+
 ## Anggota Kelompok
 | Nama                        | NIM       | ID GitHub                                         |
 |-----------------------------|-----------|---------------------------------------------------|
