@@ -1,10 +1,7 @@
 import sys
 import cv2
 import numpy as np
-import mediapipe as mp
-from mediapipe.tasks import python as mp_python
-from mediapipe.tasks.python import vision as mp_vision
-import scipy.signal as signal
+import mediapipe as mp 
 from PyQt5.QtWidgets import QApplication, QMainWindow
 from PyQt5.QtGui import QImage, QPixmap
 from PyQt5.QtCore import Qt, QTimer
@@ -12,94 +9,66 @@ import os
 
 try:
     from utils.gui import HealthTrackerUI
-    from utils.signal_processing import extract_rppg_signal, butter_bandpass, calculate_rate_from_fft
+    from utils.signal_processing import HealthAnalyzer # Kelas utama untuk pemrosesan sinyal
 except ImportError as e:
     print(f"Penting: Gagal mengimpor modul dari folder 'utils'. Pastikan file ada dan benar: {e}")
     print("Harap buat file 'utils/gui.py' dan 'utils/signal_processing.py' sesuai kebutuhan.")
     sys.exit(1)
-    
-# Cek apakah modul MediaPipe sudah terinstal
+
 def draw_landmarks_on_image(rgb_image, detection_result):
-    from mediapipe.python.solutions import drawing_utils as mp_drawing 
-    
+    """Menggambar landmark pose pada gambar untuk debugging."""
+    from mediapipe.python.solutions import drawing_utils as mp_drawing
     pose_landmarks_list = detection_result.pose_landmarks
     annotated_image = np.copy(rgb_image)
-
     for idx in range(len(pose_landmarks_list)):
         pose_landmarks = pose_landmarks_list[idx]
-        pose_landmarks_proto_list = pose_landmarks
-
         mp_drawing.draw_landmarks(
             annotated_image,
-            pose_landmarks_proto_list, 
-            mp.solutions.pose.POSE_CONNECTIONS if hasattr(mp.solutions, 'pose') else None, # Cek apakah mp.solutions.pose ada
+            pose_landmarks,
+            mp.solutions.pose.POSE_CONNECTIONS if hasattr(mp.solutions, 'pose') else None,
             mp_drawing.DrawingSpec(color=(0,255,0), thickness=2, circle_radius=2),
             mp_drawing.DrawingSpec(color=(0,0,255), thickness=2, circle_radius=2)
         )
     return annotated_image
 
-
 class MainWindow(QMainWindow):
+    """
+    Kelas utama window aplikasi yang mengatur GUI, input video,
+    dan orkestrasi pemrosesan sinyal menggunakan HealthAnalyzer.
+    """
     def __init__(self):
+        """
+        Inisialisasi MainWindow, UI, HealthAnalyzer, dan parameter aplikasi.
+        """
         super().__init__()
-        self.setWindowTitle("Realtime Health Tracker - Engine (Optimized)")
-
-        # Menggunakan UI dari utils.gui
-        self.ui = HealthTrackerUI() 
+        self.setWindowTitle("Realtime rPPG & Respiration Rate Tracker by BEE Team")
+        self.ui = HealthTrackerUI() # Inisialisasi Antarmuka Pengguna
         self.setCentralWidget(self.ui)
-        self.setMinimumSize(1000, 600) 
+        self.setMinimumSize(1000, 600)
 
-        self.face_model_path = "models/blaze_face_short_range.tflite" 
-        self.pose_model_path = "models/pose_landmarker.task"
+        # Konfigurasi path model dan FPS
+        self.face_model_path_config = "models/blaze_face_short_range.tflite"
+        self.pose_model_path_config = "models/pose_landmarker.task"
+        self.fps_config = 30 # FPS target untuk kamera dan pemrosesan
 
-        self.face_detector = None
-        self.pose_landmarker = None
+        self.analyzer = None 
         try:
-            if not os.path.exists(self.face_model_path):
-                raise FileNotFoundError(f"File model wajah tidak ditemukan: {self.face_model_path}")
-            face_base_options = mp_python.BaseOptions(model_asset_path=self.face_model_path)
-            face_options = mp_vision.FaceDetectorOptions(
-                base_options=face_base_options,
-                running_mode=mp_vision.RunningMode.IMAGE,
-                min_detection_confidence=0.5
+            # Inisialisasi HealthAnalyzer dengan konfigurasi yang ditentukan
+            self.analyzer = HealthAnalyzer(
+                face_model_path=self.face_model_path_config,
+                pose_model_path=self.pose_model_path_config,
+                fps=self.fps_config
             )
-            self.face_detector = mp_vision.FaceDetector.create_from_options(face_options)
-
-            if not os.path.exists(self.pose_model_path):
-                 raise FileNotFoundError(f"File model pose tidak ditemukan: {self.pose_model_path}")
-            pose_base_options = mp_python.BaseOptions(model_asset_path=self.pose_model_path)
-            pose_options = mp_vision.PoseLandmarkerOptions(
-                base_options=pose_base_options,
-                running_mode=mp_vision.RunningMode.IMAGE,
-                num_poses=1,
-                min_pose_detection_confidence=0.5,
-                min_tracking_confidence=0.5 
-            )
-            self.pose_landmarker = mp_vision.PoseLandmarker.create_from_options(pose_options)
-            print("Model MediaPipe berhasil dimuat.")
-
+            if not self.analyzer.has_models():
+                 raise RuntimeError("Model MediaPipe gagal dimuat di HealthAnalyzer.")
+            print("HealthAnalyzer berhasil diinisialisasi dengan model.")
         except Exception as e:
-            print(f"Error saat memuat model MediaPipe: {e}")
+            print(f"Error saat inisialisasi HealthAnalyzer: {e}")
             if hasattr(self.ui, 'video_label') and self.ui.video_label:
-                self.ui.video_label.setText(f"Error memuat model: {e}\nPastikan file model ada di folder 'models'.")
-            else:
-                print("UI video_label tidak tersedia untuk menampilkan pesan error model.")
+                self.ui.video_label.setText(f"Error init Analyzer: {e}\nPastikan file model ada.")
+            # self.analyzer akan tetap None, start_processing akan dicegah
 
-        self.fps = 30 
-        self.min_signal_length = int(2 * self.fps)
-
-        self.rppg_lowcut = 0.75 
-        self.rppg_highcut = 4.0 
-        self.rppg_b, self.rppg_a = butter_bandpass(self.rppg_lowcut, self.rppg_highcut, self.fps) 
-
-        self.resp_lowcut = 0.1 
-        self.resp_highcut = 0.7 
-        self.resp_b, self.resp_a = butter_bandpass(self.resp_lowcut, self.resp_highcut, self.fps) 
-
-        self.rppg_signal = [] 
-        self.resp_signal = [] 
-        self.frame_buffer_limit = int(10 * self.fps)
-
+        # Referensi ke elemen UI untuk kemudahan akses
         self.video_label = self.ui.video_label
         self.hr_label = self.ui.hr_value_label
         self.rr_label = self.ui.rr_value_label
@@ -108,330 +77,260 @@ class MainWindow(QMainWindow):
         self.ax_resp = self.ui.ax_resp
         self.canvas_resp = self.ui.rr_canvas
 
+        # Inisialisasi garis plot untuk sinyal rPPG dan pernapasan
         self.rppg_line, = self.ax_rppg.plot([], [], color='#FF6B6B')
         self.resp_line, = self.ax_resp.plot([], [], color='#6BCBFF')
 
-        self.cap = None
-        self.timer = QTimer(self) 
+        self.cap = None # Objek VideoCapture
+        self.timer = QTimer(self) # Timer untuk memicu update_frame secara periodik
         self.timer.timeout.connect(self.update_frame)
 
+        # Kontrol frekuensi inferensi model (setiap N frame)
         self.inference_interval = 3
         self.frame_count_for_inference = 0
-        self.last_face_detection_result = None
-        self.last_pose_detection_result = None
+        self.last_face_detection_result = None # Menyimpan hasil deteksi wajah terakhir
+        self.last_pose_detection_result = None # Menyimpan hasil deteksi pose terakhir
 
-        self.process_interval = self.fps // 2
+        # Kontrol frekuensi pemrosesan sinyal (filtering & FFT, setiap M frame)
+        self.process_interval = self.fps_config // 2 # Setengah detik
         self.frames_since_last_process = 0
-        self.last_processed_hr = 0.0
-        self.last_processed_rr = 0.0
-        self.last_filtered_rppg = []
-        self.last_filtered_resp = []
+        self.last_processed_hr = 0.0 # Menyimpan nilai HR terakhir yang valid
+        self.last_processed_rr = 0.0 # Menyimpan nilai RR terakhir yang valid
+        self.last_filtered_rppg = [] # Menyimpan data plot rPPG terakhir
+        self.last_filtered_resp = [] # Menyimpan data plot pernapasan terakhir
 
+        # Hubungkan tombol Start/End ke metode terkait
         self.ui.start_button.clicked.connect(self.start_processing)
         self.ui.end_button.clicked.connect(self.end_processing)
-        self.ui.end_button.setEnabled(False)
-
+        self.ui.end_button.setEnabled(False) # Awalnya tombol End nonaktif
         self.video_label.setText("Tekan START untuk memulai feed kamera")
 
     def start_processing(self):
-        if self.face_detector is None or self.pose_landmarker is None:
-            self.ui.video_label.setText("Model tidak termuat. Proses tidak dapat dimulai.")
-            print("Percobaan memulai proses namun model tidak termuat.")
+        """
+        Memulai proses pengambilan video dan analisis sinyal.
+        Mengaktifkan kamera, timer, dan mereset state.
+        """
+        # Cek apakah HealthAnalyzer dan modelnya siap
+        if self.analyzer is None or not self.analyzer.has_models():
+            self.ui.video_label.setText("Analyzer/Model tidak termuat. Proses tidak dapat dimulai.")
+            print("Percobaan memulai proses namun Analyzer/model tidak termuat.")
             return
 
+        # Inisialisasi VideoCapture jika belum ada
         if self.cap is None:
-            self.cap = cv2.VideoCapture(0) 
-        
+            self.cap = cv2.VideoCapture(0) # Buka webcam default
         if not self.cap.isOpened():
             self.ui.video_label.setText("Error: Tidak dapat membuka webcam!")
             self.cap = None
             return
 
-        self.timer.start(int(1000.0 / self.fps))
-        self.ui.start_button.setEnabled(False)
-        self.ui.end_button.setEnabled(True) 
+        self.timer.start(int(1000.0 / self.fps_config)) # Mulai timer sesuai FPS
+        self.ui.start_button.setEnabled(False) # Nonaktifkan tombol Start
+        self.ui.end_button.setEnabled(True)   # Aktifkan tombol End
         
-        self.rppg_signal.clear()
-        self.resp_signal.clear()
+        if self.analyzer: # Bersihkan buffer sinyal di HealthAnalyzer
+            self.analyzer.clear_buffers()
+
+        # Reset state variabel
         self.frames_since_last_process = 0
         self.last_processed_hr = 0.0
         self.last_processed_rr = 0.0
         self.last_filtered_rppg = []
         self.last_filtered_resp = []
-        
         self.frame_count_for_inference = 0
         self.last_face_detection_result = None
         self.last_pose_detection_result = None
         
-        # Placeholder frame awal untuk GUI
+        # Tampilkan frame kosong sebagai placeholder awal di GUI
         placeholder_height = self.video_label.height() if self.video_label.height() > 10 else 480
         placeholder_width = self.video_label.width() if self.video_label.width() > 10 else 640
         blank_frame = np.zeros((placeholder_height, placeholder_width, 3), dtype=np.uint8)
-
-        self._update_gui_plots_and_labels(
-            blank_frame, [], [], 0.0, 0.0, force_plot_update=True
-        )
-        if hasattr(self.ui, '_apply_styles') and callable(self.ui._apply_styles):
-            self.ui._apply_styles()
+        self._update_gui_plots_and_labels(blank_frame, [], [], 0.0, 0.0, force_plot_update=True)
+        if hasattr(self.ui, '_apply_styles'): self.ui._apply_styles() # Terapkan style jika ada
         print("Proses dimulai.")
 
     def end_processing(self):
-        self.timer.stop()
+        """
+        Menghentikan proses pengambilan video dan analisis sinyal.
+        Melepaskan kamera dan menghentikan timer.
+        """
+        self.timer.stop() # Hentikan timer
         if self.cap is not None:
-            self.cap.release()
+            self.cap.release() # Lepaskan resource kamera
             self.cap = None
-        self.ui.start_button.setEnabled(True)
-        self.ui.end_button.setEnabled(False)
+        self.ui.start_button.setEnabled(True) # Aktifkan tombol Start
+        self.ui.end_button.setEnabled(False)  # Nonaktifkan tombol End
         
         self.video_label.setText("Feed Kamera Berakhir. Tekan START.")
-        current_stylesheet = self.video_label.styleSheet()
-        if "QLabel#VideoLabel" in current_stylesheet: # Hanya jika ada style spesifik
-             self.video_label.setStyleSheet(current_stylesheet.split("QLabel#VideoLabel")[0] + " QLabel#VideoLabel { background-color: black; color:white; qproperty-alignment: AlignCenter; }")
-        else: # Fallback jika tidak ada style spesifik
-             self.video_label.setStyleSheet("background-color: black; color:white; qproperty-alignment: AlignCenter;")
-
-
-        self.hr_label.setText("-- BPM") 
-        self.rr_label.setText("-- Breaths/min") 
+        # (Styling video_label lainnya tetap sama)
+        self.hr_label.setText("-- BPM") # Reset label HR
+        self.rr_label.setText("-- Breaths/min") # Reset label RR
         
-        self.last_filtered_rppg = []
-        self.last_filtered_resp = []
-        self.last_processed_hr = 0.0
-        self.last_processed_rr = 0.0
+        # Reset data plot terakhir
+        self.last_filtered_rppg, self.last_filtered_resp = [], []
+        self.last_processed_hr, self.last_processed_rr = 0.0, 0.0
+        self.rppg_line.set_data([], []); self.resp_line.set_data([], []) # Kosongkan plot
         
-        self.rppg_line.set_data([], [])
-        self.resp_line.set_data([], [])
-        
-        if hasattr(self.ui, '_apply_styles') and callable(self.ui._apply_styles):
-            self.ui._apply_styles() 
-        self.canvas_rppg.draw_idle() 
-        self.canvas_resp.draw_idle() 
+        if hasattr(self.ui, '_apply_styles'): self.ui._apply_styles()
+        self.canvas_rppg.draw_idle(); self.canvas_resp.draw_idle() # Perbarui canvas plot
         print("Proses dihentikan.")
 
     def _preprocess_frame(self):
-        if self.cap is None or not self.cap.isOpened():
-            return None, None, None
-        ret, frame = self.cap.read() 
-        if not ret:
-            return None, None, None
+        """
+        Membaca frame dari kamera, melakukan flipping, konversi warna,
+        dan menyiapkan mp.Image untuk MediaPipe.
+        Returns:
+            tuple: (frame BGR asli, frame RGB untuk MediaPipe, objek mp.Image) atau (None, None, None) jika gagal.
+        """
+        if self.cap is None or not self.cap.isOpened(): return None, None, None
+        ret, frame = self.cap.read() # Baca frame
+        if not ret: return None, None, None # Jika gagal baca frame
 
-        frame = cv2.flip(frame, 1)
-        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb_frame)
-        return frame, rgb_frame, mp_image
-
-    def _process_rppg_signal(self, frame_for_drawing_and_signal, face_result_to_use):
-        if self.face_detector is None or face_result_to_use is None:
-            return
-
-        if face_result_to_use.detections:
-            detection = face_result_to_use.detections[0] 
-            bbox = detection.bounding_box
-            frame_h, frame_w, _ = frame_for_drawing_and_signal.shape
-
-            x = int(bbox.origin_x)
-            y = int(bbox.origin_y)
-            w = int(bbox.width)
-            h = int(bbox.height)
-            
-            x = max(0, min(x, frame_w - 1))
-            y = max(0, min(y, frame_h - 1))
-            w = max(0, min(w, frame_w - x))
-            h = max(0, min(h, frame_h - y))
-
-            if w > 0 and h > 0 :
-                forehead_x = int(x + w * 0.25) 
-                forehead_y = int(y + h * 0.05)
-                forehead_w = int(w * 0.5)
-                forehead_h = int(h * 0.20)
-
-                forehead_x = max(0, min(forehead_x, frame_w - 1))
-                forehead_y = max(0, min(forehead_y, frame_h - 1))
-                forehead_w = max(0, min(forehead_w, frame_w - forehead_x))
-                forehead_h = max(0, min(forehead_h, frame_h - forehead_y))
-
-                if forehead_w > 0 and forehead_h > 0:
-                    cv2.rectangle(frame_for_drawing_and_signal, (forehead_x, forehead_y), 
-                                  (forehead_x + forehead_w, forehead_y + forehead_h), (0, 255, 255), 1)
-                    
-                    # Memanggil fungsi dari utils.signal_processing
-                    rppg_value = extract_rppg_signal(frame_for_drawing_and_signal, 
-                                                     (forehead_x, forehead_y, forehead_w, forehead_h))
-
-                    if rppg_value is not None:
-                        self.rppg_signal.append(rppg_value) 
-                        if len(self.rppg_signal) > self.frame_buffer_limit:
-                            self.rppg_signal.pop(0) 
-
-    def _process_respiration_signal(self, frame_for_drawing, pose_result_to_use):
-        if self.pose_landmarker is None or pose_result_to_use is None:
-            return
-
-        if pose_result_to_use.pose_landmarks:
-            landmarks = pose_result_to_use.pose_landmarks[0]
-            h_img, w_img, _ = frame_for_drawing.shape
-
-            try:
-                if len(landmarks) > max(11,12) and \
-                   hasattr(landmarks[11], 'visibility') and landmarks[11].visibility > 0.5 and \
-                   hasattr(landmarks[12], 'visibility') and landmarks[12].visibility > 0.5:
-                    rs_landmark = landmarks[12] 
-                    ls_landmark = landmarks[11]
-
-                    y1_r = int(rs_landmark.y * h_img)
-                    y1_l = int(ls_landmark.y * h_img)
-                    
-                    cv2.circle(frame_for_drawing, (int(rs_landmark.x * w_img), y1_r), 3, (255,0,0), -1) 
-                    cv2.circle(frame_for_drawing, (int(ls_landmark.x * w_img), y1_l), 3, (0,255,0), -1) 
-
-                    avg_y_shoulder = np.mean([y1_r, y1_l]) 
-                    self.resp_signal.append(-avg_y_shoulder)
-                    if len(self.resp_signal) > self.frame_buffer_limit:
-                        self.resp_signal.pop(0) 
-            except (IndexError, AttributeError) as e:
-                print(f"Peringatan: Gagal memproses landmark bahu: {e}")
-                pass
-
-    def _filter_and_calculate_rates(self):
-        filtered_rppg_signal = []
-        current_hr = 0.0
-        if len(self.rppg_signal) >= self.min_signal_length:
-            try:
-                if not (np.array_equal(self.rppg_b, [1]) and np.array_equal(self.rppg_a, [1])):
-                    padlen_rppg = min(self.min_signal_length - 1, len(self.rppg_signal) - 1)
-                    if padlen_rppg > 0 :
-                        filtered_rppg_signal = signal.filtfilt(self.rppg_b, self.rppg_a, self.rppg_signal, padlen=padlen_rppg).tolist()
-                    else: 
-                        filtered_rppg_signal = list(self.rppg_signal)
-                else:
-                    filtered_rppg_signal = list(self.rppg_signal)
-                current_hr = calculate_rate_from_fft(filtered_rppg_signal, self.fps, self.rppg_lowcut, self.rppg_highcut) 
-            except ValueError: 
-                filtered_rppg_signal = list(self.rppg_signal)
-        else:
-            filtered_rppg_signal = list(self.rppg_signal)
-
-        filtered_resp_signal = []
-        current_rr = 0.0
-        if len(self.resp_signal) >= self.min_signal_length:
-            try:
-                if not (np.array_equal(self.resp_b, [1]) and np.array_equal(self.resp_a, [1])): 
-                    padlen_resp = min(self.min_signal_length - 1, len(self.resp_signal) - 1)
-                    if padlen_resp > 0:
-                        filtered_resp_signal = signal.filtfilt(self.resp_b, self.resp_a, self.resp_signal, padlen=padlen_resp).tolist()
-                    else:
-                        filtered_resp_signal = list(self.resp_signal)
-                else:
-                    filtered_resp_signal = list(self.resp_signal)
-                current_rr = calculate_rate_from_fft(filtered_resp_signal, self.fps, self.resp_lowcut, self.resp_highcut) 
-            except ValueError:
-                filtered_resp_signal = list(self.resp_signal)
-        else:
-            filtered_resp_signal = list(self.resp_signal)
-            
-        return filtered_rppg_signal, filtered_resp_signal, current_hr, current_rr
+        frame = cv2.flip(frame, 1) # Flip horizontal agar seperti cermin
+        rgb_frame_for_mp = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB) # Konversi ke RGB untuk MediaPipe
+        mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb_frame_for_mp) # Buat objek mp.Image
+        return frame, rgb_frame_for_mp, mp_image
 
     def _update_gui_plots_and_labels(self, frame_processed, filtered_rppg, filtered_resp, hr, rr, force_plot_update=False):
+        """
+        Memperbarui elemen GUI: video feed, plot sinyal, dan label nilai HR/RR.
+        Args:
+            frame_processed (numpy.ndarray): Frame video (BGR) yang akan ditampilkan.
+            filtered_rppg (list): Data sinyal rPPG terfilter untuk diplot.
+            filtered_resp (list): Data sinyal pernapasan terfilter untuk diplot.
+            hr (float): Nilai Heart Rate (BPM).
+            rr (float): Nilai Respiration Rate (Breaths/min).
+            force_plot_update (bool): Paksa pembaruan plot meskipun data kosong.
+        """
+        # Update plot rPPG
         if filtered_rppg or force_plot_update:
             self.rppg_line.set_ydata(filtered_rppg)
             self.rppg_line.set_xdata(range(len(filtered_rppg)))
-            self.ax_rppg.relim()
-            self.ax_rppg.autoscale_view(True,True,True)
-            self.canvas_rppg.draw_idle() 
+            self.ax_rppg.relim(); self.ax_rppg.autoscale_view(True,True,True)
+            self.canvas_rppg.draw_idle()
 
+        # Update plot pernapasan
         if filtered_resp or force_plot_update:
             self.resp_line.set_ydata(filtered_resp)
             self.resp_line.set_xdata(range(len(filtered_resp)))
-            self.ax_resp.relim()
-            self.ax_resp.autoscale_view(True,True,True)
-            self.canvas_resp.draw_idle() 
+            self.ax_resp.relim(); self.ax_resp.autoscale_view(True,True,True)
+            self.canvas_resp.draw_idle()
         
-        if force_plot_update and hasattr(self.ui, '_apply_styles') and callable(self.ui._apply_styles):
-             self.ui._apply_styles()
+        if force_plot_update and hasattr(self.ui, '_apply_styles'): self.ui._apply_styles()
 
-        self.hr_label.setText(f"{hr:.0f} BPM" if hr > 0 else "-- BPM") 
-        self.rr_label.setText(f"{rr:.0f} Breaths/min" if rr > 0 else "-- Breaths/min") 
+        # Update label nilai HR dan RR
+        self.hr_label.setText(f"{hr:.0f} BPM" if hr > 0 else "-- BPM")
+        self.rr_label.setText(f"{rr:.0f} Breaths/min" if rr > 0 else "-- Breaths/min")
 
+        # Update video feed
         if frame_processed is not None and frame_processed.size > 0 :
             try:
-                display_frame_rgb = cv2.cvtColor(frame_processed, cv2.COLOR_BGR2RGB)
-                h, w, ch = display_frame_rgb.shape
+                # Konversi frame BGR ke RGB untuk QImage
+                display_frame_for_qt = cv2.cvtColor(frame_processed, cv2.COLOR_BGR2RGB)
+                h, w, ch = display_frame_for_qt.shape
                 bytes_per_line = ch * w
-                qt_image = QImage(display_frame_rgb.data, w, h, bytes_per_line, QImage.Format_RGB888)
+                qt_image = QImage(display_frame_for_qt.data, w, h, bytes_per_line, QImage.Format_RGB888)
                 pixmap = QPixmap.fromImage(qt_image)
+                # Skalakan pixmap agar sesuai dengan ukuran label video
                 self.video_label.setPixmap(pixmap.scaled(
                     self.video_label.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation))
-            except cv2.error:
-                self.video_label.setText("Error Frame")
+            except cv2.error as e_cv:
+                print(f"Error konversi frame untuk GUI: {e_cv}")
+                self.video_label.setText("Error Frame Conversion")
+            except Exception as e_gui:
+                print(f"Error updating video label: {e_gui}")
+                self.video_label.setText("Error GUI Display")
         elif frame_processed is None: 
-            pass
-        else: # Jika frame_processed adalah array kosong atau invalid
+            pass # Jangan lakukan apa-apa jika frame tidak ada (mis., kamera berhenti)
+        else: # Jika frame_processed adalah array kosong
             self.video_label.setText("Processing...")
 
-    def update_frame(self): 
-        original_frame, rgb_frame, mp_image = self._preprocess_frame() 
+
+    def update_frame(self):
+        """
+        Metode utama yang dipanggil oleh QTimer secara periodik.
+        Mengambil frame, melakukan inferensi, memproses sinyal, dan memperbarui GUI.
+        """
+        if self.analyzer is None: # Cek jika analyzer gagal diinisialisasi
+            if not self.timer.isActive(): # Set pesan error sekali jika timer tidak aktif
+                self.video_label.setText("Health Analyzer tidak termuat. Aplikasi tidak dapat berfungsi.")
+            return
+
+        # 1. Dapatkan frame dari kamera dan lakukan pra-pemrosesan
+        original_frame_bgr, _, mp_image = self._preprocess_frame() # rgb_frame_for_mp tidak dipakai langsung di sini
         
-        if original_frame is None:
-            self._update_gui_plots_and_labels(None, 
-                                              self.last_filtered_rppg, self.last_filtered_resp, 
+        if original_frame_bgr is None: # Jika gagal mendapatkan frame
+            self._update_gui_plots_and_labels(None, self.last_filtered_rppg, self.last_filtered_resp,
                                               self.last_processed_hr, self.last_processed_rr)
             return
 
-        frame_to_display = original_frame.copy()
+        # Buat salinan frame untuk digambari ROI (format BGR)
+        frame_to_display_with_roi = original_frame_bgr.copy()
 
+        # 2. Lakukan inferensi model secara berkala (tidak setiap frame)
         run_inference_this_frame = (self.frame_count_for_inference % self.inference_interval == 0)
         self.frame_count_for_inference += 1
 
         if run_inference_this_frame and mp_image:
-            if self.face_detector:
-                try:
-                    self.last_face_detection_result = self.face_detector.detect(mp_image)
-                except Exception:
-                    self.last_face_detection_result = None
-            if self.pose_landmarker:
-                try:
-                    self.last_pose_detection_result = self.pose_landmarker.detect(mp_image)
-                except Exception:
-                    self.last_pose_detection_result = None
+            # Simpan hasil deteksi untuk digunakan pada frame berikutnya jika tidak ada inferensi baru
+            self.last_face_detection_result = self.analyzer.detect_faces(mp_image)
+            self.last_pose_detection_result = self.analyzer.detect_pose(mp_image)
         
+        # 3. Ekstrak sinyal mentah rPPG dan pernapasan menggunakan hasil deteksi terakhir
+        # HealthAnalyzer akan menggambar ROI pada frame_to_display_with_roi
         if self.last_face_detection_result:
-             self._process_rppg_signal(frame_to_display, self.last_face_detection_result)
+            self.analyzer.process_rppg_from_face(frame_to_display_with_roi, self.last_face_detection_result)
         if self.last_pose_detection_result:
-             self._process_respiration_signal(frame_to_display, self.last_pose_detection_result)
+            self.analyzer.process_respiration_from_pose(frame_to_display_with_roi, self.last_pose_detection_result)
         
+        # 4. Proses sinyal (filter & FFT) secara berkala
         self.frames_since_last_process += 1
-        
-        plot_data_updated_this_cycle = False
+        plot_data_updated_this_cycle = False # Flag untuk menandai apakah plot perlu di-update
+
         if self.frames_since_last_process >= self.process_interval:
             self.frames_since_last_process = 0
-            if len(self.rppg_signal) >= self.min_signal_length or \
-               len(self.resp_signal) >= self.min_signal_length:
-                
-                filtered_rppg, filtered_resp, current_hr, current_rr = self._filter_and_calculate_rates()
-                
+            
+            # Proses sinyal rPPG dan hitung HR
+            if len(self.analyzer.rppg_signal_buffer) >= self.analyzer.min_signal_length:
+                filtered_rppg, current_hr = self.analyzer.filter_and_calculate_hr()
                 self.last_filtered_rppg = filtered_rppg
-                self.last_filtered_resp = filtered_resp
-                self.last_processed_hr = current_hr if current_hr is not None else 0.0
-                self.last_processed_rr = current_rr if current_rr is not None else 0.0
+                self.last_processed_hr = current_hr
                 plot_data_updated_this_cycle = True
+            else: # Jika sinyal belum cukup, tampilkan buffer mentah
+                self.last_filtered_rppg = list(self.analyzer.rppg_signal_buffer)
+
+            # Proses sinyal pernapasan dan hitung RR
+            if len(self.analyzer.resp_signal_buffer) >= self.analyzer.min_signal_length:
+                filtered_resp, current_rr = self.analyzer.filter_and_calculate_rr()
+                self.last_filtered_resp = filtered_resp
+                self.last_processed_rr = current_rr
+                plot_data_updated_this_cycle = True
+            else: # Jika sinyal belum cukup, tampilkan buffer mentah
+                self.last_filtered_resp = list(self.analyzer.resp_signal_buffer)
         
+        # 5. Update GUI dengan frame yang sudah digambari ROI dan data sinyal terbaru
         self._update_gui_plots_and_labels(
-            frame_to_display,
+            frame_to_display_with_roi, # Frame BGR dengan ROI
             self.last_filtered_rppg,
             self.last_filtered_resp,
             self.last_processed_hr,
             self.last_processed_rr,
-            force_plot_update=plot_data_updated_this_cycle
+            force_plot_update=plot_data_updated_this_cycle # Paksa update plot jika data baru diproses
         )
 
-    def closeEvent(self, event): 
+    def closeEvent(self, event):
+        """
+        Dipanggil ketika window aplikasi ditutup.
+        Memastikan proses dihentikan dengan benar.
+        """
         self.end_processing()
         print("Aplikasi ditutup.")
-        event.accept() 
+        event.accept()
 
 if __name__ == "__main__":
-    app = QApplication(sys.argv) 
+    app = QApplication(sys.argv)
     
+    # Buat folder 'models' jika belum ada
     if not os.path.exists("models"):
         try:
             os.makedirs("models")
@@ -440,12 +339,12 @@ if __name__ == "__main__":
             print(f"Gagal membuat folder 'models': {e}")
             sys.exit(1)
             
-    window = MainWindow()
+    window = MainWindow() # Buat instance MainWindow
     
-    # Hanya jalankan aplikasi jika model berhasil dimuat
-    if window.face_detector and window.pose_landmarker:
-        window.show()
-        sys.exit(app.exec_())
+    # Hanya jalankan aplikasi jika HealthAnalyzer dan modelnya berhasil dimuat
+    if window.analyzer and window.analyzer.has_models():
+        window.show() # Tampilkan window
+        sys.exit(app.exec_()) # Jalankan event loop aplikasi
     else:
-        print("Gagal memuat model MediaPipe. Aplikasi tidak dapat dijalankan sepenuhnya.")
+        print("Gagal memuat HealthAnalyzer atau modelnya. Aplikasi mungkin tidak berfungsi penuh.")
         window.show()
