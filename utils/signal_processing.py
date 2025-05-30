@@ -218,7 +218,7 @@ class HealthAnalyzer:
 
         extracted_signals = [] 
         # Definisi, validasi, ekstraksi, dan penggambaran untuk ROI Dahi
-        fh_x, fh_y, fh_w, fh_h = int(x+w*0.25), int(y+h*0.05), int(w*0.5), int(h*0.20)
+        fh_x, fh_y, fh_w, fh_h = int(x+w*0.25), int(y+h*(-0.1)), int(w*0.5), int(h*0.20)
         fh_x,fh_y = max(0,min(fh_x,frame_w-1)),max(0,min(fh_y,frame_h-1))
         fh_w,fh_h = max(0,min(fh_w,frame_w-fh_x)),max(0,min(fh_h,frame_h-fh_y))
         if fh_w > 0 and fh_h > 0:

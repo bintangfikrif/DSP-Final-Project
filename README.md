@@ -14,6 +14,14 @@ Untuk mendeteksi sinyal pernapasan, aplikasi ini memanfaatkan teknologi pose lan
 Dengan pendekatan non-kontak ini, aplikasi dapat memberikan pemantauan dasar kondisi fisiologis secara langsung, praktis, dan nyaman, tanpa perlu perangkat tambahan seperti sensor yang menempel di tubuh.
 
 ## Fitur Aplikasi
+| Nama Fitur    | Fungsi       |
+|---------------------|--------------------|
+|Estimasi Heart Rate|Otomatis mendeteksi wajah (bagian dahi) user dan mengekstrak perubahan warna kulit untuk mengestimasi frekuensi denyut jantung menggunakan transformasi Fourier (FFT)|
+|Estimasi Respiration Rate|Mendeteksi posisi bahu kiri dan kanan menggunakan MediaPipe, lalu menganalisis gerakan vertikal naik-turun untuk menghitung laju pernapasan|
+|Tampilan video real-time dari webcam|Menampilkan video real-time melalui webcam|
+|Nilai HR (dalam BPM) dan RR (dalam RPM)| Menampilkan nilai HR dan RR dalam BPM|
+|Visualisasi grafik sinyal|Sinyal HR dan RR divisualisasikan secara real-time menggunakan|
+
 
 ## Library yang Digunakan
 | Library    | Fungsi       |
@@ -43,7 +51,7 @@ Berikut ini adalah teknologi yang digunakan dalam mengembangkan proyek ini:
 |---------------|---------------------------------------------------------------------------------------|
 | 1             | - Inisiasi GitHub dan Setup Project                                                   |
 |               | - Integrasi Video Capture dengan Processing untuk Sinyal Respirasi                    |
-| 2             | - Design GUI                                                                          |
+| 2             | - Design GUI. Link : https://bit.ly/designUI_DSP                                      |
 |               | - Integrasi Video Capture dengan Processing untuk Sinyal rPPG                         |
 |               | - Percobaan menampilkan live signal monitoring                                        |
 | 3             | - Menerapkan filter band-pass untuk sinyal rPPG dan respirasi                         |
