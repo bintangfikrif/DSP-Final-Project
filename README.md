@@ -45,8 +45,37 @@ Berikut ini adalah teknologi yang digunakan dalam mengembangkan proyek ini:
 |---------------------|--------------------|
 | Visual Studio Code  | Digunakan sebagai editor utama untuk menulis dan mengelola kode secara efisien selama pengembangan proyek       |
 | Python              | dipilih sebagai bahasa pemrograman karena mendukung berbagai pustaka untuk pemrosesan sinyal, gambar, dan data real-time |
+|Git & GitHub |Digunakan untuk sistem kontrol versi dan kolaborasi dalam pengembangan proyek |
+|Figma | Digunakan untuk desain UI |
 
 ## Cara Menjalankan
+1. **Prasyarat**:
+   - Pastikan Python (disarankan versi 3.x) sudah terinstal.
+   - Pastikan `pip` (Python package installer) sudah terinstal.
+
+2. **Clone Repository (jika belum)**:
+   ```bash
+   git clone <https://github.com/bintangfikrif/DSP-Final-Project>
+   cd <NAMA_FOLDER_REPOSITORY>
+3. **Buat dan Aktifkan Virtual Environment (opsional tapi direkomendasikan):**
+`python -m venv venv`
+    #Windows 
+    `.\venv\Scripts\activate`
+    #macOS/Linux
+    `source venv/bin/activate`
+4. **Instalasi Dependensi:**
+    Pastikan file `requirements.txt` tersedia di root direktori proyek
+    ```bash
+    pip install -r requirements.txt
+5. **Siapkan Model MediaPipe:**
+    - Buat folder bernama models di root proyek (jika belum ada)
+    - Unduh dan simpan file berikut ke dalam folder `models`
+        `blaze_face_short_range.tflite`
+        `pose_landmarker.task`
+6. **Jalankan Aplikasi:**
+    `python main.py`
+    Aplikasi akan membuka jendela GUI. Tekan tombol "START" untuk memulai proses analisis dari webcam secara real-time.
+
 
 ## Logbook
 | Minggu ke-    | Progress                                                                              | 
